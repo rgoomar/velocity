@@ -223,21 +223,33 @@ Velocity = {};
      *                 }
      */
     resetReports: function (options) {
+      console.log('*******************************************');
+      console.log('*******************************************');
+      console.log('resetReports', options);
+      console.log('originalCount', VelocityTestReports.find().count());
+
+
       options = options || {};
       check(options, {
         framework: Match.Optional(String),
         notIn: Match.Optional([String])
       });
 
-      var query = {};
-      if (options.framework) {
-        query.framework = options.framework;
+      if(options.framework !== "nightwatch"){
+        if (options.framework) {
+          query.framework = options.framework;
+        }
+        if (options.notIn) {
+          query = _.assign(query, {_id: {$nin: options.notIn }});
+        }
+        console.log('query', query);
+        VelocityTestReports.remove(query);
+        console.log('newCount', VelocityTestReports.find().count());
+
+        _updateAggregateReports();
+
       }
-      if (options.notIn) {
-        query = _.assign(query, {_id: {$nin: options.notIn }});
-      }
-      VelocityTestReports.remove(query);
-      _updateAggregateReports();
+
     },
 
     /**
@@ -274,7 +286,8 @@ Velocity = {};
      *                   timestamp - Date
      */
     postLog: function (options) {
-      console.log
+      console.log(options.message);
+
       check(options, {
         type: String,
         message: String,
@@ -315,27 +328,33 @@ Velocity = {};
      *                               ex. 'Template.leaderboard.selected_name'
      */
     postResult: function (data) {
+      console.log('receivedPostResult', data.name);
+      console.log('receivedPostResult', data.framework);
       // Nightwatch doesn't return failureType, failureMessage, feailureStackTrace, or ancestors
       // we can't assume that a test framework will have that informationPhoenix42
-      check(data, Match.ObjectIncluding({
-        id: String,
-        name: String,
-        framework: _matchOneOf(_.keys(_config)),
-        result: _matchOneOf(['passed', 'failed', 'pending']),
-        isClient: Match.Optional(Boolean),
-        isServer: Match.Optional(Boolean),
-        browser: Match.Optional(_matchOneOf(['chrome', 'firefox', 'internet explorer', 'opera', 'safari'])), // TODO: Add missing values
-        timestamp: Match.Optional(Match.OneOf(Date, String)),
-        async: Match.Optional(Boolean),
-        timeOut: Match.Optional(Match.Any)
-        //failureType: Match.Optional(String),
-        //failureMessage: Match.Optional(String),
-        //failureStackTrace: Match.Optional(Match.Any),
-        //ancestors: Match.Optional([String])
-      }));
+      // check(data, Match.ObjectIncluding({
+      //   id: String,
+      //   name: String,
+      //   framework: _matchOneOf(_.keys(_config)),
+      //   result: _matchOneOf(['passed', 'failed', 'pending']),
+      //   isClient: Match.Optional(Boolean),
+      //   isServer: Match.Optional(Boolean),
+      //   browser: Match.Optional(_matchOneOf(['chrome', 'firefox', 'internet explorer', 'opera', 'safari'])), // TODO: Add missing values
+      //   timestamp: Match.Optional(Match.OneOf(Date, String)),
+      //   async: Match.Optional(Boolean),
+      //   timeOut: Match.Optional(Match.Any)
+      //   //failureType: Match.Optional(String),
+      //   //failureMessage: Match.Optional(String),
+      //   //failureStackTrace: Match.Optional(Match.Any),
+      //   //ancestors: Match.Optional([String])
+      // }));
 
-      VelocityTestReports.upsert(data.id, {$set: data});
-      _updateAggregateReports();
+      console.log('upsert', data);
+      //console.log(VelocityTestReports.upsert(data.id, {$set: data}));
+      VelocityTestReports.insert(data);
+      console.log('VelocityTestReports.count()', VelocityTestReports.find().count());
+      //console.log('VelocityTestReports', VelocityTestReports.find().fetch());
+
     },  // end postResult
 
     /**
@@ -348,12 +367,16 @@ Velocity = {};
      *                   framework - String  ex. 'jasmine-unit'
      */
     completed: function (data) {
+      console.log('*******************************************');
+      console.log('completed', data.framework);
+
       check(data, {
         framework: String
       });
 
       VelocityAggregateReports.upsert({'name': data.framework}, {$set: {'result': 'completed'}});
       _updateAggregateReports();
+
     },  // end completed
 
     /**
@@ -782,6 +805,7 @@ Velocity = {};
    * @private
    */
   function _updateAggregateReports () {
+    //console.log("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
     //console.log('_updateAggregateReports');
     //console.log('VelocityAggregateReports.find().fetch()', VelocityAggregateReports.find().fetch());
 
@@ -810,6 +834,8 @@ Velocity = {};
         'name': {$in: _getTestFrameworkNames()},
         'result': 'completed'
       }).count();
+      console.log("completedFrameworksCount", completedFrameworksCount);
+
 
 
       // the following syntax is dangerous in case the database is flapping and the cursor hasn't been instantiated
@@ -818,11 +844,13 @@ Velocity = {};
       var aggregateComplete = VelocityAggregateReports.findOne({'name': 'aggregateComplete'});
       if(aggregateComplete){
         if((aggregateComplete.result !== 'completed') && (_getTestFrameworkNames().length === completedFrameworksCount)){
-          VelocityAggregateReports.update({'name': 'aggregateComplete'}, {$set: {'result': 'completed'}});
-
-          _.each(_postProcessors, function (reporter) {
-            reporter();
+          VelocityAggregateReports.update({'name': 'aggregateComplete'}, {$set: {'result': 'completed'}}, function(error, result){
+            console.log("VelocityAggregateReports set to complete!");
           });
+
+          // _.each(_postProcessors, function (reporter) {
+          //   reporter();
+          // });
 
         }
       }
